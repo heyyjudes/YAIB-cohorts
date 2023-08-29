@@ -2,7 +2,7 @@ import os
 import argparse
 import pyarrow as pa
 import pyarrow.parquet as pq
-
+from utils import make_argument_parser, output_yaib, output_clairvoyance
 from src.cohort import Cohort, SelectionCriterion
 from src.steps import (
     InputStep, LoadStep, 
@@ -160,19 +160,16 @@ def create_aki_task(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--src', default='mimic_demo', help='name of datasource',
-                        choices=['aumc', 'eicu', 'eicu_demo', 'hirid', 'mimic', 'mimic_demo', 'miiv'])
-    parser.add_argument('--out_dir', default='../data/aki', help='path where to store extracted data',
-                        choices=['aumc', 'eicu', 'eicu_demo', 'hirid', 'mimic', 'mimic_demo', 'miiv'])
+    parser = make_argument_parser()
     args = parser.parse_known_args()[0]
 
     (outc, dyn, sta), attrition = create_aki_task(args)
 
     save_dir = os.path.join(args.out_dir, args.src)
-    os.makedirs(save_dir, exist_ok=True)
-    pq.write_table(pa.Table.from_pandas(outc), os.path.join(save_dir, 'outc.parquet'))
-    pq.write_table(pa.Table.from_pandas(dyn), os.path.join(save_dir, 'dyn.parquet'))
-    pq.write_table(pa.Table.from_pandas(sta), os.path.join(save_dir, 'sta.parquet'))
 
-    attrition.to_csv(os.path.join(save_dir, 'attrition.csv'))
+    if args.out_type is "yaib":
+        output_yaib(outc, dyn, sta, attrition, save_dir)
+    elif args.out_type is "clairvoyance":
+        output_clairvoyance(outc, dyn, sta, attrition, save_dir)
+    else:
+        raise ValueError("Unknown output type. Please implement it or choose from the supplied options.")

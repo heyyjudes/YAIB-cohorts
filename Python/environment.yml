@@ -1,4 +1,4 @@
-name: yaib-cohorts2
+name: yaib-cohorts
 channels:
   - defaults
 dependencies:
@@ -8,5 +8,7 @@ dependencies:
   - numpy
   - pyyaml
   - pyarrow
+  - pip=23.1
   - pip:
+    - pip
     - rpy2

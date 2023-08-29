@@ -2,7 +2,7 @@ import os
 import argparse
 import pyarrow as pa
 import pyarrow.parquet as pq
-
+from constants import vars
 from src.cohort import Cohort, SelectionCriterion
 from src.steps import (
     InputStep, LoadStep, 
@@ -15,21 +15,16 @@ from src.ricu_utils import (
     n_obs_per_row, longest_rle
 )
 
+from utils import make_argument_parser, output_yaib, output_clairvoyance
 outc_var = "death_icu"
-static_vars = ["age", "sex", "height", "weight"]
-dynamic_vars = ["alb", "alp", "alt", "ast", "be", "bicar", "bili", "bili_dir",
-                  "bnd", "bun", "ca", "cai", "ck", "ckmb", "cl", "crea", "crp", 
-                  "dbp", "fgn", "fio2", "glu", "hgb", "hr", "inr_pt", "k", "lact",
-                  "lymph", "map", "mch", "mchc", "mcv", "methb", "mg", "na", "neut", 
-                  "o2sat", "pco2", "ph", "phos", "plt", "po2", "ptt", "resp", "sbp", 
-                  "temp", "tnt", "urine", "wbc"]
+
 
 def create_mortality_task(args):
     print('Start creating the mortality task.')
     print('   Preload variables')
     load_mortality = LoadStep(outc_var, args.src, cache=True)
-    load_static = LoadStep(static_vars, args.src, cache=True)
-    load_dynamic = LoadStep(dynamic_vars, args.src, cache=True)
+    load_static = LoadStep(vars.static_vars, args.src, cache=True)
+    load_dynamic = LoadStep(vars.dynamic_vars, args.src, cache=True)
 
     print('   Define observation times')
     time_of_death = load_mortality.perform()
@@ -126,19 +121,16 @@ def create_mortality_task(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--src', default='mimic_demo', help='name of datasource',
-                        choices=['aumc', 'eicu', 'eicu_demo', 'hirid', 'mimic', 'mimic_demo', 'miiv'])
-    parser.add_argument('--out_dir', default='../data/mortality', help='path where to store extracted data',
-                        choices=['aumc', 'eicu', 'eicu_demo', 'hirid', 'mimic', 'mimic_demo', 'miiv'])
+    parser = make_argument_parser()
     args = parser.parse_known_args()[0]
 
     (outc, dyn, sta), attrition = create_mortality_task(args)
 
     save_dir = os.path.join(args.out_dir, args.src)
-    os.makedirs(save_dir, exist_ok=True)
-    pq.write_table(pa.Table.from_pandas(outc), os.path.join(save_dir, 'outc.parquet'))
-    pq.write_table(pa.Table.from_pandas(dyn), os.path.join(save_dir, 'dyn.parquet'))
-    pq.write_table(pa.Table.from_pandas(sta), os.path.join(save_dir, 'sta.parquet'))
 
-    attrition.to_csv(os.path.join(save_dir, 'attrition.csv'))
+    if args.out_type is "yaib":
+        output_yaib(outc, dyn, sta, attrition, save_dir)
+    elif args.out_type is "clairvoyance":
+        output_clairvoyance(outc, dyn, sta, attrition, save_dir)
+    else:
+        raise ValueError("Unknown output type. Please implement it or choose from the supplied options.")
