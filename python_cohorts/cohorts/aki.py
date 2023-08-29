@@ -1,46 +1,32 @@
 import os
-import argparse
-import pyarrow as pa
-import pyarrow.parquet as pq
-
-from src.cohort import Cohort, SelectionCriterion
-from src.steps import (
-    InputStep, LoadStep, 
-    AggStep, FilterStep, TransformStep, CustomStep, RenameStep,
-    Pipeline, CombineStep
+from ..utils import make_argument_parser, output_yaib, output_clairvoyance
+from ..constants import vars
+from ..src.cohort import Cohort, SelectionCriterion
+from ..src.steps import (
+    InputStep, LoadStep,
+    AggStep, FilterStep, TransformStep, CustomStep, DropStep, RenameStep,
+    Pipeline
 )
-from src.ricu import stay_windows
-from src.ricu_utils import (
-    stop_window_at, n_obs_per_row, longest_rle, 
-    make_grid_mapper, make_patient_mapper, make_prevalence_calculator, make_outcome_windower
+from ..src.ricu import stay_windows, hours
+from ..src.ricu_utils import (
+    stop_window_at, make_grid_mapper, make_patient_mapper,
+    n_obs_per_row, longest_rle
 )
 
-from utils import make_argument_parser, output_yaib, output_clairvoyance
+outc_var = "aki"
 
-outc_var = "sep3_alt" # this is a custom definition of sepsis that differs from that defined by ricu
-static_vars = ["age", "sex", "height", "weight"]
-dynamic_vars = ["alb", "alp", "alt", "ast", "be", "bicar", "bili", "bili_dir",
-                  "bnd", "bun", "ca", "cai", "ck", "ckmb", "cl", "crea", "crp", 
-                  "dbp", "fgn", "fio2", "glu", "hgb", "hr", "inr_pt", "k", "lact",
-                  "lymph", "map", "mch", "mchc", "mcv", "methb", "mg", "na", "neut", 
-                  "o2sat", "pco2", "ph", "phos", "plt", "po2", "ptt", "resp", "sbp", 
-                  "temp", "tnt", "urine", "wbc"]
-
-def create_sepsis_task(args):
-    print('Start creating the sepsis task.')
+def create_aki_task(args):
+    print('Start creating the AKI task.')
     print('   Preload variables')
-    sepsis_args = {}
-    if args.src in ['eicu', 'eicu_demo', 'hirid']:
-        sepsis_args['si_mode'] = "abx"
-    load_sepsis = LoadStep(outc_var, args.src, cache=True, **sepsis_args)
-    sepsis = load_sepsis.perform()
+    load_aki = LoadStep(outc_var, args.src, cache=True)
+    aki = load_aki.perform()
     
-    load_static = LoadStep(static_vars, args.src, cache=True)
-    load_dynamic = LoadStep(dynamic_vars, args.src, cache=True)
+    load_static = LoadStep(vars.static_vars, args.src, cache=True)
+    load_dynamic = LoadStep(vars.dynamic_vars, args.src, cache=True)
 
     print('   Define observation times')
     patients = stay_windows(args.src)
-    patients = stop_window_at(patients, end=24*7)
+    patients = stop_window_at(patients, end=24*7)    
 
     print('   Define exclusion criteria')
     # General exclusion criteria
@@ -80,38 +66,57 @@ def create_sepsis_task(args):
     ])
 
     # Task-specific exclusion criteria
-    sepsis_add6 = sepsis[sepsis['time'] >= 0].copy()
-    sepsis_add6['time'] += 6
-    patients = stop_window_at(patients, end=sepsis_add6)
+    aki_add6 = aki[aki['time'] >= 0].copy()
+    aki_add6['time'] += 6
+    patients = stop_window_at(patients, end=aki_add6)
 
-    get_first_sepsis = Pipeline("Get sepsis patients")
-    get_first_sepsis.add_step([
-       load_sepsis, 
+    get_first_aki = Pipeline("Get AKI patients")
+    get_first_aki.add_step([
+       InputStep(aki), 
        AggStep('stay_id', 'max')
     ])
     load_hospital_id = LoadStep('hospital_id', src=args.src)
     
-    excl6 = SelectionCriterion('Low sepsis prevalence')
+    excl6 = SelectionCriterion('Low AKI prevalence')
     excl6.add_step([
         CombineStep(
-            steps=[get_first_sepsis, load_hospital_id], 
+            steps=[get_first_aki, load_hospital_id], 
             func=make_prevalence_calculator(outc_var)
         ),
         FilterStep('prevalence', lambda x: x == 0)
     ])
 
-    excl7 = SelectionCriterion('Sepsis onset before 6h in the ICU')
+    excl7 = SelectionCriterion('AKI onset before 6h in the ICU')
     excl7.add_step([
-        load_sepsis,
-        AggStep(['stay_id'], lambda x: x.iloc[0]),
+        InputStep(aki),
+        AggStep(['stay_id'], 'first'),
         FilterStep('time', lambda x: x < 6)
+    ])
+
+    def cummin_crea(x):
+        x['crea'] = x.groupby('stay_id')['crea'].cummin()
+        return x
+
+    def get_baseline_candidates(x):
+        x = x.copy()
+        x['time_ge_0'] = x['time'] >= 0
+        x['num_in_icu'] = x.groupby('stay_id')['time_ge_0'].cumsum()
+        return x[(x['time'] < 0) | (x['num_in_icu'] == 1)]        
+
+    excl8 = SelectionCriterion('Baseline creatinine > 4')
+    excl8.add_step([
+        LoadStep('crea', src=args.src),
+        CustomStep(cummin_crea),
+        CustomStep(get_baseline_candidates),
+        AggStep(['stay_id'], 'last'),
+        FilterStep('crea', lambda x: x > 4)
     ])
 
     print('   Select cohort\n')
     cohort = Cohort(patients)
     cohort.add_criterion(
-        [excl1, excl2, excl3, excl4, excl5, excl6, excl7] if args.src in ['eicu', 'eicu_demo'] else
-        [excl1, excl2, excl3, excl4, excl5, excl7] 
+        [excl1, excl2, excl3, excl4, excl5, excl6, excl7, excl8] if args.src in ['eicu', 'eicu_demo'] else
+        [excl1, excl2, excl3, excl4, excl5, excl7, excl8] 
     )
     print(cohort.criteria)
     patients, attrition = cohort.select()
@@ -120,7 +125,7 @@ def create_sepsis_task(args):
     print('   Load and format input data')
     outc_formatting = Pipeline("Prepare length of stay")
     outc_formatting.add_step([
-        load_sepsis, 
+        InputStep(aki), 
         CustomStep(make_grid_mapper(patients)),
         RenameStep(outc_var, 'label'),
         CustomStep(make_outcome_windower(6)),
@@ -149,7 +154,7 @@ if __name__ == "__main__":
     parser = make_argument_parser()
     args = parser.parse_known_args()[0]
 
-    (outc, dyn, sta), attrition = create_sepsis_task(args)
+    (outc, dyn, sta), attrition = create_aki_task(args)
 
     save_dir = os.path.join(args.out_dir, args.src)
 
@@ -159,4 +164,3 @@ if __name__ == "__main__":
         output_clairvoyance(outc, dyn, sta, attrition, save_dir)
     else:
         raise ValueError("Unknown output type. Please implement it or choose from the supplied options.")
-

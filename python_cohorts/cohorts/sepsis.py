@@ -1,35 +1,29 @@
 import os
-import argparse
-import pyarrow as pa
-import pyarrow.parquet as pq
-import numpy as np
-from constants import vars
-from src.cohort import Cohort, SelectionCriterion
-from src.steps import (
-    InputStep, LoadStep, 
+from ..utils import make_argument_parser, output_yaib, output_clairvoyance
+from ..constants import vars
+from ..src.cohort import Cohort, SelectionCriterion
+from ..src.steps import (
+    InputStep, LoadStep,
     AggStep, FilterStep, TransformStep, CustomStep, DropStep, RenameStep,
-    Pipeline
+    Pipeline, CombineStep
 )
-from src.ricu import stay_windows, hours
-from src.ricu_utils import (
+from ..src.ricu import stay_windows, hours
+from ..src.ricu_utils import (
     stop_window_at, make_grid_mapper, make_patient_mapper,
-    n_obs_per_row, longest_rle
+    n_obs_per_row, longest_rle, make_prevalence_calculator, make_outcome_windower
 )
-from utils import output_yaib, output_clairvoyance, make_argument_parser
 
-outc_var = "los_icu"
+outc_var = "sep3_alt" # this is a custom definition of sepsis that differs from that defined by ricu
 
-
-def create_los_task(args):
-    print('Start creating the length of stay task.')
+def create_sepsis_task(args):
+    print('Start creating the sepsis task.')
     print('   Preload variables')
-    load_los = Pipeline('Load and process kidney function')
-    load_los.add_step([
-        LoadStep(outc_var, args.src),
-        TransformStep(outc_var, lambda x: np.floor(x * 24))
-    ])
-    los = load_los.apply()
-
+    sepsis_args = {}
+    if args.src in ['eicu', 'eicu_demo', 'hirid']:
+        sepsis_args['si_mode'] = "abx"
+    load_sepsis = LoadStep(outc_var, args.src, cache=True, **sepsis_args)
+    sepsis = load_sepsis.perform()
+    
     load_static = LoadStep(vars.static_vars, args.src, cache=True)
     load_dynamic = LoadStep(vars.dynamic_vars, args.src, cache=True)
 
@@ -38,6 +32,7 @@ def create_los_task(args):
     patients = stop_window_at(patients, end=24*7)
 
     print('   Define exclusion criteria')
+    # General exclusion criteria
     excl1 = SelectionCriterion('Invalid length of stay')
     excl1.add_step([
         InputStep(patients),
@@ -73,27 +68,52 @@ def create_los_task(args):
         FilterStep('age', lambda x: x < 18)
     ])
 
+    # Task-specific exclusion criteria
+    sepsis_add6 = sepsis[sepsis['time'] >= 0].copy()
+    sepsis_add6['time'] += 6
+    patients = stop_window_at(patients, end=sepsis_add6)
+
+    get_first_sepsis = Pipeline("Get sepsis patients")
+    get_first_sepsis.add_step([
+       load_sepsis, 
+       AggStep('stay_id', 'max')
+    ])
+    load_hospital_id = LoadStep('hospital_id', src=args.src)
+    
+    excl6 = SelectionCriterion('Low sepsis prevalence')
+    excl6.add_step([
+        CombineStep(
+            steps=[get_first_sepsis, load_hospital_id], 
+            func=make_prevalence_calculator(outc_var)
+        ),
+        FilterStep('prevalence', lambda x: x == 0)
+    ])
+
+    excl7 = SelectionCriterion('Sepsis onset before 6h in the ICU')
+    excl7.add_step([
+        load_sepsis,
+        AggStep(['stay_id'], lambda x: x.iloc[0]),
+        FilterStep('time', lambda x: x < 6)
+    ])
+
     print('   Select cohort\n')
     cohort = Cohort(patients)
-    cohort.add_criterion([excl1, excl2, excl3, excl4, excl5])
+    cohort.add_criterion(
+        [excl1, excl2, excl3, excl4, excl5, excl6, excl7] if args.src in ['eicu', 'eicu_demo'] else
+        [excl1, excl2, excl3, excl4, excl5, excl7] 
+    )
     print(cohort.criteria)
     patients, attrition = cohort.select()
     print('\n')
 
     print('   Load and format input data')
-    def calculate_remaining_los(df):
-        df['max_los'] = 7 * 24
-        df["los_icu"] = df['los_icu'] - df['time']
-        df["los_icu"] = df[['los_icu', 'max_los']].min(axis=1)
-        return df.drop('max_los', axis=1)
-
     outc_formatting = Pipeline("Prepare length of stay")
     outc_formatting.add_step([
-        InputStep(los), 
-        CustomStep(make_grid_mapper(patients, match_time=False)),
-        CustomStep(calculate_remaining_los),
-        DropStep('time'),
-        RenameStep(outc_var, 'label')
+        load_sepsis, 
+        CustomStep(make_grid_mapper(patients)),
+        RenameStep(outc_var, 'label'),
+        CustomStep(make_outcome_windower(6)),
+        TransformStep('label', lambda x: x.astype(int))
     ])
     outc = outc_formatting.apply()
 
@@ -118,7 +138,7 @@ if __name__ == "__main__":
     parser = make_argument_parser()
     args = parser.parse_known_args()[0]
 
-    (outc, dyn, sta), attrition = create_los_task(args)
+    (outc, dyn, sta), attrition = create_sepsis_task(args)
 
     save_dir = os.path.join(args.out_dir, args.src)
 

@@ -65,7 +65,7 @@ cd YAIB-cohorts
 Once you have cloned the repo, all cohorts can be created directly from within R or via an interface from python. Instructions for each can be found at: 
 
 - R: [README.md](R/README.md)
-- Python: [README.md](Python/README.md)  
+- Python: [README.md](python_cohorts/README.md)  
 
 Note: due to some recent bug fixes in ricu, the extracted cohorts might differ marginally to those published in the benchmarking paper. 
 

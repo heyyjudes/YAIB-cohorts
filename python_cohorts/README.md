@@ -34,14 +34,14 @@ This repository currently allows for the extraction of five prediction tasks:
 
 Classification:
 
-1. ICU mortality after 24 hours: [mortality.py](mortality.py)
-2. Acute Kidney Injury within the next 6 hours: [aki.py](aki.py)
-3. Sepsis within the next 6 hours: [sepsis.py](sepsis.py)
+1. ICU mortality after 24 hours: [mortality.py](cohorts/mortality.py)
+2. Acute Kidney Injury within the next 6 hours: [aki.py](cohorts/aki.py)
+3. Sepsis within the next 6 hours: [sepsis.py](cohorts/sepsis.py)
 
 Regression:
 
-4. Kidney function on the second day of ICU admission: [kidney_function.py](kidney_function.py)
-5. Remaining length of stay: [los.py](los.py)
+4. Kidney function on the second day of ICU admission: [kidney_function.py](cohorts/kidney_function.py)
+5. Remaining length of stay: [los.py](cohorts/los.py)
 
 
 Data for a single task like mortality from a single dataset can be extracted via: 

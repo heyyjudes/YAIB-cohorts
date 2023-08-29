@@ -4,5 +4,5 @@
 
 .DS_Store
 R/renv/*
-Python/renv/*
+python_cohorts/renv/*
 *.pyc

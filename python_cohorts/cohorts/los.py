@@ -1,41 +1,39 @@
 import os
-import argparse
-import pyarrow as pa
-import pyarrow.parquet as pq
-from constants import vars
-from src.cohort import Cohort, SelectionCriterion
-from src.steps import (
-    InputStep, LoadStep, 
+
+from python_cohorts.utils import make_argument_parser, output_yaib, output_clairvoyance
+from ..constants import vars
+from ..src.cohort import Cohort, SelectionCriterion
+from ..src.steps import (
+    InputStep, LoadStep,
     AggStep, FilterStep, TransformStep, CustomStep, DropStep, RenameStep,
     Pipeline
 )
-from src.ricu import stay_windows, hours
-from src.ricu_utils import (
+from ..src.ricu import stay_windows, hours
+from ..src.ricu_utils import (
     stop_window_at, make_grid_mapper, make_patient_mapper,
     n_obs_per_row, longest_rle
 )
-
-from utils import make_argument_parser, output_yaib, output_clairvoyance
-outc_var = "death_icu"
+outc_var = "los_icu"
 
 
-def create_mortality_task(args):
-    print('Start creating the mortality task.')
+def create_los_task(args):
+    print('Start creating the length of stay task.')
     print('   Preload variables')
-    load_mortality = LoadStep(outc_var, args.src, cache=True)
+    load_los = Pipeline('Load and process kidney function')
+    load_los.add_step([
+        LoadStep(outc_var, args.src),
+        TransformStep(outc_var, lambda x: np.floor(x * 24))
+    ])
+    los = load_los.apply()
+
     load_static = LoadStep(vars.static_vars, args.src, cache=True)
     load_dynamic = LoadStep(vars.dynamic_vars, args.src, cache=True)
 
     print('   Define observation times')
-    time_of_death = load_mortality.perform()
-    time_of_death = time_of_death[time_of_death[outc_var] == True]
-    
     patients = stay_windows(args.src)
-    patients = stop_window_at(patients, end=24)
-    patients = stop_window_at(patients, end=time_of_death)
+    patients = stop_window_at(patients, end=24*7)
 
     print('   Define exclusion criteria')
-    # General exclusion criteria
     excl1 = SelectionCriterion('Invalid length of stay')
     excl1.add_step([
         InputStep(patients),
@@ -71,38 +69,30 @@ def create_mortality_task(args):
         FilterStep('age', lambda x: x < 18)
     ])
 
-    # Task-specific exclusion criteria
-    excl6 = SelectionCriterion('Died within the first 30 hours of ICU admission')
-    excl6.add_step([
-        LoadStep('death_icu', src=args.src, interval=hours(1), cache=True),
-        FilterStep('death_icu', lambda x: x == True),
-        FilterStep('time', lambda x: x < 30)
-    ])
-
-    excl7 = SelectionCriterion('Length of stay < 30h')
-    excl7.add_step([
-        LoadStep('los_icu', src=args.src, cache=True),
-        FilterStep('los_icu', lambda x: x < 30/24)
-    ])
-
     print('   Select cohort\n')
     cohort = Cohort(patients)
-    cohort.add_criterion([excl1, excl2, excl3, excl4, excl5, excl6, excl7])
+    cohort.add_criterion([excl1, excl2, excl3, excl4, excl5])
     print(cohort.criteria)
     patients, attrition = cohort.select()
     print('\n')
 
     print('   Load and format input data')
-    outc_formatting = Pipeline("Prepare mortality")
+    def calculate_remaining_los(df):
+        df['max_los'] = 7 * 24
+        df["los_icu"] = df['los_icu'] - df['time']
+        df["los_icu"] = df[['los_icu', 'max_los']].min(axis=1)
+        return df.drop('max_los', axis=1)
+
+    outc_formatting = Pipeline("Prepare length of stay")
     outc_formatting.add_step([
-        load_mortality, 
+        InputStep(los), 
+        CustomStep(make_grid_mapper(patients, match_time=False)),
+        CustomStep(calculate_remaining_los),
         DropStep('time'),
-        CustomStep(make_patient_mapper(patients)),
-        TransformStep(outc_var, lambda x: x.fillna(0).astype(int)),
         RenameStep(outc_var, 'label')
     ])
     outc = outc_formatting.apply()
-    
+
     dyn_formatting = Pipeline("Prepare dynamic variables")
     dyn_formatting.add_step([
         load_dynamic,
@@ -124,7 +114,7 @@ if __name__ == "__main__":
     parser = make_argument_parser()
     args = parser.parse_known_args()[0]
 
-    (outc, dyn, sta), attrition = create_mortality_task(args)
+    (outc, dyn, sta), attrition = create_los_task(args)
 
     save_dir = os.path.join(args.out_dir, args.src)
 
@@ -134,3 +124,4 @@ if __name__ == "__main__":
         output_clairvoyance(outc, dyn, sta, attrition, save_dir)
     else:
         raise ValueError("Unknown output type. Please implement it or choose from the supplied options.")
+
