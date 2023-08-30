@@ -8,7 +8,7 @@ import pandas as pd
 def output_clairvoyance(save_dir, sta, dyn, outc, attrition, task_type="static"):
     os.makedirs(save_dir, exist_ok=True)
     dyn.melt(id_vars=['stay_id', 'time'])
-    if (task_type == "static"):
+    if task_type == "static":
         pd.join(outc, sta)
     else:
         pd.join(outc, dyn)

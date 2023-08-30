@@ -1,4 +1,4 @@
-#source("renv/activate.R")
+source("renv/activate.R")
 
 Sys.setenv(RICU_DATA_PATH = "/Users/patrick/datasets/ricu")
 if(require("ricu", quietly = TRUE)) {

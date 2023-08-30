@@ -24,7 +24,7 @@ secs = ricu.secs
 # ------------------------------------------------------------------------------
 # Wrap or extend other ricu functionality 
 
-def dictionary(dir: str = '../ricu-extensions/configs', **kwargs) -> ro.ListVector:
+def dictionary(dir: str = '../../ricu-extensions/configs', **kwargs) -> ro.ListVector:
     """Wrapper around `ricu.load_dictionary` to load the default and custom ricu concepts 
 
     Args:
