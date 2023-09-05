@@ -12,6 +12,7 @@ All data extractions were run using R 4.2.2 on an Apple M1 Max with Ventura 13.2
 Rscript setup_env.R
 
 ```
+> Note: you might have to install some extra packages for this step to succeed (for WSL Ubuntu: libssl-dev, libcurl4-openssl-dev, libudunits2-dev). Install with `sudo apt install libssl-dev` )
 
 ### Step 1: Load the datasets into `ricu`
 
