@@ -1,8 +1,10 @@
-if (!require("renv")) install.packages("renv")
+# chooseCRANmirror(81)
+# R.set_environ(RENV_CONFIG_REPOS_OVERRIDE = "https://cloud.r-project.org")
+# if (!require("renv")) install.packages("renv")
 
-renv::activate()
-renv::status()
-renv::restore()
+# renv::activate()
+# renv::status()
+# renv::restore()
 
 # utils package isn't installed automatically
 install.packages("units")

@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y libcurl4-openssl-dev libssl-dev libudun
 RUN cd /R
 ENV RENV_PATHS_LIBRARY renv/library
 RUN cd /R && R --vanilla -s -e 'renv::restore()'
-RUN cd /R && R --vanilla -s -e 'renv::activate()' && R --vanilla 'install.packages("units")' && R --vanilla 'install.packages(c("mimic.demo","eicu.demo"), repos="https://eth-mds.github.io/physionet-demo")'
+RUN cd /R && R --vanilla -s -e 'renv::activate()' && R --vanilla 'install.packages("units")' && \
+    R --vanilla 'install.packages(c("mimic.demo","eicu.demo"), repos="https://eth-mds.github.io/physionet-demo")' \
+    && R --vanilla 'install.packages("tidyverse")' \
 ## utils package isn't installed automatically
 #install.packages("units")
 #

@@ -1,6 +1,7 @@
-#source("renv/activate.R")
+source("renv/activate.R")
+# install.packages("mimic.demo", repos="https://eth-mds.github.io/physionet-demo")
 
-Sys.setenv(RICU_DATA_PATH = "/Users/patrick/datasets/ricu")
+Sys.setenv(RICU_DATA_PATH = "/usr/local/lib/R/site-library/mimic.demo")
 if(require("ricu", quietly = TRUE)) {
   source("../ricu-extensions/callbacks/callback-icu-mortality.R")
   source("../ricu-extensions/callbacks/callback-kdigo.R")
