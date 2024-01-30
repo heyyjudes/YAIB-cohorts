@@ -39,14 +39,17 @@ def create_kf_task(args):
     load_dynamic = LoadStep(dynamic_vars, args.src, cache=True)
 
     print('   Define observation times')
-    patients = stay_windows(args.src)
+    base_patients = stay_windows(args.src)
+    base_patients = stop_window_at(base_patients, end=168)
+
+    patients = stop_window_at(base_patients.copy(), end=24)
     patients = stop_window_at(patients, end=24)
 
     print('   Define exclusion criteria')
     # General exclusion criteria
     excl1 = SelectionCriterion('Invalid length of stay')
     excl1.add_step([
-        InputStep(patients),
+        InputStep(base_patients),
         FilterStep('end', lambda x: x < 0)
     ])
 
@@ -66,7 +69,7 @@ def create_kf_task(args):
     excl4 = SelectionCriterion('More than 12 hour gap between measurements')
     excl4.add_step([
         load_dynamic, 
-        CustomStep(make_grid_mapper(patients, step_size=1)),
+        CustomStep(make_grid_mapper(base_patients, step_size=1)),
         CustomStep(n_obs_per_row),
         TransformStep('n', lambda x: x > 0), 
         AggStep('stay_id', longest_rle, 'n'),
