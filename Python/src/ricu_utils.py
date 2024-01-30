@@ -102,7 +102,10 @@ def longest_rle(x: pd.Series, value: bool | int | str = False) -> int:
         run size
     """
     lengths = (x != x.shift()).astype(int).cumsum()
-    return lengths[x == value].value_counts().max()
+    max_rle = lengths[x == value].value_counts().max()
+    if np.isnan(max_rle):
+        max_rle = 0
+    return max_rle
 
 def make_prevalence_calculator(var: str) -> Callable:
     """Calculate the prevalence of a condition by hospital (e.g., sepsis)
