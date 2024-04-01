@@ -1,6 +1,6 @@
-#source("renv/activate.R")
+source("renv/activate.R")
 
-Sys.setenv(RICU_DATA_PATH = "/Users/patrick/datasets/ricu")
+Sys.setenv(RICU_DATA_PATH = "/home/ubuntu/data/ricu")
 if(require("ricu", quietly = TRUE)) {
   source("../ricu-extensions/callbacks/callback-icu-mortality.R")
   source("../ricu-extensions/callbacks/callback-kdigo.R")
