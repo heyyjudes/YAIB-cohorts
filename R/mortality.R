@@ -4,23 +4,25 @@ library(rlang)
 library(data.table)
 library(vctrs)
 library(yaml)
+library(pryr)
 
 source("src/misc.R")
 source("src/steps.R")
 source("src/sequential.R")
 source("src/obs_time.R")
 
-
+print("imported libraries")
 # Create a parser
 p <- arg_parser("Extract and preprocess ICU mortality data")
 p <- add_argument(p, "--src", help="source database", default="mimic_demo")
 argv <- parse_args(p)
+print("parsed arguments")
 
 src <- argv$src 
 conf <- yaml.load_file("../config.yaml")
 path <- file.path(conf$out_dir, "mortality24")
 
-
+print("loaded paths")
 cncpt_env <- new.env()
 
 # Task description
@@ -29,7 +31,7 @@ time_unit <- hours
 freq <- 1L
 max_len <- hours(24L)
 
-static_vars <- c("age", "sex", "height", "weight")
+static_vars <- c("age", "sex", "height", "weight", "ethnic")
 
 dynamic_vars <- c("alb", "alp", "alt", "ast", "be", "bicar", "bili", "bili_dir",
                   "bnd", "bun", "ca", "cai", "ck", "ckmb", "cl", "crea", "crp", 
@@ -104,23 +106,6 @@ map_to_patients <- function(x) {
   merge(grid, x, all.x = TRUE)
 }
 
-outc_fmt <- function_step(outc, map_to_patients)
-outc_fmt <- mutate_step(outc_fmt, ricu::replace_na, val = FALSE)
-outc_fmt <- mutate_step(outc_fmt, as.integer)
-# TODO: make step to add/remove columns
-ind <- index_var(outc_fmt)
-outc_fmt[, c(ind) := NULL]
-rename_cols(outc_fmt, c("stay_id", "label"), by_ref = TRUE)
-
-dyn_fmt <- function_step(dyn, map_to_grid)
-dyn_fmt <- filter_step(dyn_fmt, patients)
-rename_cols(dyn_fmt, c("stay_id", "time"), meta_vars(dyn_fmt), by_ref = TRUE)
-
-sta_fmt <- function_step(sta, map_to_patients)
-rename_cols(sta_fmt, c("stay_id"), id_vars(sta), by_ref = TRUE)
-
-
-
 # Write to disk -----------------------------------------------------------
 
 out_path <- paste0(path, "/", src)
@@ -129,7 +114,35 @@ if (!dir.exists(out_path)) {
   dir.create(out_path, recursive = TRUE)
 }
 
-arrow::write_parquet(outc_fmt, paste0(out_path, "/outc.parquet"))
-arrow::write_parquet(dyn_fmt, paste0(out_path, "/dyn.parquet"))
-arrow::write_parquet(sta_fmt, paste0(out_path, "/sta.parquet"))
 fwrite(attrition, paste0(out_path, "/attrition.csv"))
+
+outc_fmt <- function_step(outc, map_to_patients)
+outc_fmt <- mutate_step(outc_fmt, ricu::replace_na, val = FALSE)
+outc_fmt <- mutate_step(outc_fmt, as.integer)
+
+# TODO: make step to add/remove columns
+ind <- index_var(outc_fmt)
+outc_fmt[, c(ind) := NULL]
+rename_cols(outc_fmt, c("stay_id", "label"), by_ref = TRUE)
+arrow::write_parquet(outc_fmt, paste0(out_path, "/outc.parquet"))
+print(paste("Memory used:", round(as.numeric(mem_used()) / 1024^3, 3), "GB"))
+rm(outc_fmt)
+gc()
+print(paste("Memory used after cleanup:", round(as.numeric(mem_used()) / 1024^3, 3), "GB"))
+
+dyn_fmt <- function_step(dyn, map_to_grid)
+dyn_fmt <- filter_step(dyn_fmt, patients)
+rename_cols(dyn_fmt, c("stay_id", "time"), meta_vars(dyn_fmt), by_ref = TRUE)
+arrow::write_parquet(dyn_fmt, paste0(out_path, "/dyn.parquet"))
+print(paste("Memory used:", round(as.numeric(mem_used()) / 1024^3, 3), "GB"))
+rm(dyn, dyn_fmt)
+gc()
+print(paste("Memory used after cleanup:", round(as.numeric(mem_used()) / 1024^3, 3), "GB"))
+
+sta_fmt <- function_step(sta, map_to_patients)
+rename_cols(sta_fmt, c("stay_id"), id_vars(sta), by_ref = TRUE)
+arrow::write_parquet(sta_fmt, paste0(out_path, "/sta.parquet"))
+print(paste("Memory used:", round(as.numeric(mem_used()) / 1024^3, 3), "GB"))
+rm(sta, sta_fmt)
+gc()
+print(paste("Memory used after cleanup:", round(as.numeric(mem_used()) / 1024^3, 3), "GB"))
