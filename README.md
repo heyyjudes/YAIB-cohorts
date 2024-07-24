@@ -1,3 +1,9 @@
+## Modifications
+This repo is has been modified from the original YAIB-cohorts repo. More specifically: 
+- [R](R) Now includes variable selection to include gender and race
+- [data](data) Includes hospital meta data for eICU
+
+
 ![YAIB logo](https://github.com/rvandewater/YAIB/blob/development/docs/figures/yaib_logo.png)
 # Generating Patient cohorts for 🧪 _Yet Another ICU Benchmark_
 
